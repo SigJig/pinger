@@ -1,15 +1,20 @@
 
 import re
 import csv
+import sys
 import time
 import subprocess
 import matplotlib.pyplot as pyplot
 from pathlib import Path
 
 PATH = Path.cwd().joinpath('out.csv')
+FORMAT = 'round-trip min/avg/max/stddev'
 
-def ping():
-    with open(PATH, 'w') as fp:
+if sys.platform in ("linux", "linux2"):
+    FORMAT = 'rtt min/avg/max/mdev'
+
+def ping(path):
+    with open(path, 'w') as fp:
         writer = csv.writer(fp)
 
         while 1:
@@ -19,43 +24,56 @@ def ping():
                                             stdout=subprocess.PIPE).communicate()
                 if err:
                     print(err)
-                else:
-                    groups = list(map(float, re.search(r'round-trip min/avg/max/stddev = (\d+.\d+)/(\d+.\d+)/(\d+.\d+)/(\d+.\d+)',
-                                out.decode('utf-8')).groups()))
+                    continue
 
-                    writer.writerow(groups + [time.time()])
-                    print(groups)
+                search = re.search(re.compile(f'{FORMAT} = (\d+.\d+)/(\d+.\d+)/(\d+.\d+)/(\d+.\d+)'),
+                            out.decode('utf-8'))
+
+                if search is None:
+                    print('Search is none')
+                    continue
+
+                groups = list(map(float, search.groups()))
+
+                writer.writerow(groups + [time.time()])
+                print(groups)
+
             except KeyboardInterrupt:
                 print('Interrupted')
                 return
 
-def main():
-    ping()
-
-    #pyplot.plot([1,2,3])
-    #pyplot.show()
-
-    with open(PATH) as fp:
+def show(path):
+    with open(path) as fp:
         reader = csv.reader(fp)
-        #rows = [float(x) for x in row for row in reader]
-
-        maxs = []
-        mins = []
-        avgs = []
-        times = []
+        plots = ([],[],[],[])
 
         for row in reader:
             vals = [float(x) for x in row]
-            mins.append(vals[0])
-            avgs.append(vals[1])
-            maxs.append(vals[2])
-            times.append(vals[3])
 
-        pyplot.plot(mins, label="min")
-        pyplot.plot(avgs, label="avg")
-        pyplot.plot(maxs, label="max")
+            for i in range(4):
+                plots[i].append(vals[i])
+
+        for idx, label in enumerate(("min", "avg", "max")):
+            pyplot.plot(plots[idx], label=label)
+
         pyplot.show()
 
+def main(**kwargs):
+    file = kwargs.pop('file', PATH)
+
+    if 'p' in kwargs:
+        ping(file)
+    show(file)
 
 if __name__ == '__main__':
-    main()
+    args = (x for x in sys.argv[1:])
+    kwargs = {}
+
+    for arg in args:
+        if arg.startswith('--'):
+            kwargs[arg.lstrip('-')] = next(args)
+        elif arg.startswith('-'):
+            kwargs[arg.lstrip('-')] = None
+
+    main(**kwargs)
+
